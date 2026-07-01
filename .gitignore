@@ -1,4 +1,11 @@
+# Runtime scan/report output
+data/
+out/
+*.jsonl
+report_*.md
+
+# Python
 __pycache__/
 *.pyc
 .pytest_cache/
-artifacts/
+.venv/

@@ -1,205 +1,126 @@
+<div align="center">
+
+<img src="assets/excalibur_logo.png" alt="Excalibur" width="320" />
+
 # Excalibur
 
-[![Python](https://img.shields.io/badge/python-3.9%2B-3776AB.svg)](#local-development)
-[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
-[![CLI](https://img.shields.io/badge/interface-CLI-black.svg)](#cli)
-[![Docker](https://img.shields.io/badge/runtime-Docker-2496ED.svg)](#docker)
+**Interface agentique entre Hermes et [nuclei](https://github.com/projectdiscovery/nuclei) — l'outil qui transforme un scan brut en rapport de bug bounty prêt à soumettre.**
 
-```text
-                /\
-               /**\
-              /****\
-             /******\
-            /********\
-           /**********\
-          /____  ____\
-               ||
-               ||
-               ||
-               ||
-            ___||___
-           /   ||   \
-          /____||____\
-               /\
-              /  \
+[![Python](https://img.shields.io/badge/python-3.10%2B-3776AB.svg)](#)
+[![nuclei](https://img.shields.io/badge/engine-nuclei-6B4FBB.svg)](https://github.com/projectdiscovery/nuclei)
+[![MCP](https://img.shields.io/badge/interface-MCP-a855f7.svg)](https://modelcontextprotocol.io)
+[![tests](https://img.shields.io/badge/tests-10%2F10-22c55e.svg)](#tests)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+
+</div>
+
+---
+
+## Pourquoi
+
+`nuclei` détecte. Il ne rédige pas. Sa sortie JSONL est brute, dupliquée, mélangée
+(info + vraies vulns), et hors-scope non filtré. Les plateformes (YesWeHack,
+Immunefi, HackerOne) veulent l'inverse : un rapport structuré, dédupliqué,
+**dans le scope**, avec preuve de reproduction.
+
+Excalibur est la couche manquante :
+
+```
+cible → nuclei → parse → dédup → SCOPE → rapport Markdown de soumission
 ```
 
-Knowledge-driven Nmap orchestration with Ansible and structured reporting.
-
-## Overview
-
-Excalibur turns a local Markdown knowledge base into reproducible Nmap runs:
-
-1. pick a scan profile
-2. extract `nmap` commands from the knowledge file
-3. generate a readable Ansible playbook
-4. run the scan
-5. convert Nmap XML into structured JSON
-6. optionally enrich the report with CVE lookups
-
-The goal is simple: make scanning workflows easier to inspect, easier to repeat, and much easier to ship in a clean container.
-
-## Highlights
-
-- multi-command CLI with profile discovery, build, run, report, inspect, and doctor workflows
-- startup banner and installable `excalibur` command
-- local knowledge source, no runtime GitHub fetch dependency
-- structured core modules instead of a single monolithic script
-- backward-compatible legacy entrypoint via [ExegolSpector.py](/Users/billard/Documents/ExegolSpector/ExegolSpector.py)
-- container-ready execution via [Dockerfile](/Users/billard/Documents/ExegolSpector/Dockerfile)
+Il ne réinvente aucun scanner. Il pilote `nuclei` (le vrai moteur) et produit
+la seule chose que `nuclei` ne fait pas : un livrable prêt à copier-coller.
 
 ## Architecture
 
-Product-facing CLI:
-- [Excalibur.py](/Users/billard/Documents/ExegolSpector/Excalibur.py)
-- [excalibur/cli.py](/Users/billard/Documents/ExegolSpector/excalibur/cli.py)
-- [excalibur/banner.py](/Users/billard/Documents/ExegolSpector/excalibur/banner.py)
-
-Core engine:
-- [exegol_spector/knowledge.py](/Users/billard/Documents/ExegolSpector/exegol_spector/knowledge.py)
-- [exegol_spector/playbooks.py](/Users/billard/Documents/ExegolSpector/exegol_spector/playbooks.py)
-- [exegol_spector/reports.py](/Users/billard/Documents/ExegolSpector/exegol_spector/reports.py)
-- [exegol_spector/nmap_report.py](/Users/billard/Documents/ExegolSpector/exegol_spector/nmap_report.py)
-- [exegol_spector/runner.py](/Users/billard/Documents/ExegolSpector/exegol_spector/runner.py)
-
-Legacy extension points:
-- [Modules/attack_orchestrator.py](/Users/billard/Documents/ExegolSpector/Modules/attack_orchestrator.py)
-- [Modules/cve_search.py](/Users/billard/Documents/ExegolSpector/Modules/cve_search.py)
-
-## CLI
-
-List available profiles:
-
-```bash
-excalibur profiles
+```text
+Hermes (agent)
+     │  MCP stdio
+     ▼
+excalibur_mcp.py          ← 3 outils : scan · report · scope_check
+     │
+     ▼
+excalibur.py              ← moteur : run_nuclei → parse_jsonl → apply_scope → build_report
+     │
+     ▼
+nuclei -jsonl             ← moteur de détection (ProjectDiscovery)
 ```
 
-Validate local prerequisites:
+Découpage volontaire (**loop engineering**) : le code déterministe fait le
+mécanique (scan, parse, scope, format) — fiable et gratuit en tokens ;
+l'agent fait le jugement (choisir la cible, trier, décider de soumettre).
 
-```bash
-excalibur doctor
-```
+## Fonctionnalités
 
-Generate a playbook without executing it:
-
-```bash
-excalibur build --type basic --targets 127.0.0.1
-```
-
-Run a scan end-to-end:
-
-```bash
-excalibur run --type basic --targets 127.0.0.1
-```
-
-Convert an existing XML report:
-
-```bash
-excalibur report --xml-report artifacts/nmap_report.xml
-```
-
-Inspect a JSON report:
-
-```bash
-excalibur inspect --json-report artifacts/nmap_report.json
-```
-
-Legacy compatibility:
-
-```bash
-python3 ExegolSpector.py --type basic --targets 127.0.0.1 --dry-run
-```
-
-## Docker
-
-Build the image:
-
-```bash
-docker build -t excalibur .
-```
-
-Run the CLI in a disposable container:
-
-```bash
-docker run --rm -it \
-  -v "$(pwd)/artifacts:/opt/excalibur/artifacts" \
-  excalibur profiles
-```
-
-Build a playbook from the container:
-
-```bash
-docker run --rm -it \
-  -v "$(pwd)/artifacts:/opt/excalibur/artifacts" \
-  excalibur build --type basic --targets 127.0.0.1
-```
-
-Use Compose:
-
-```bash
-docker compose run --rm excalibur profiles
-docker compose run --rm excalibur build --type basic --targets 127.0.0.1
-```
-
-The image includes:
-- Python 3.11
-- `nmap`
-- `ansible`
-- `git`
-- the installed `excalibur` entrypoint
+- **Orchestration nuclei** — tags/severity configurables, cap de timeout
+- **Déduplication** — nuclei répète le même template sur plusieurs matchers ; Excalibur fusionne
+- **Scope enforcement** — include/exclude en globs, résistant au suffix-spoofing (`x.com.attacker.net` rejeté)
+- **Séparation actionnable / info** — les détections `info` vont en appendice, pas dans le rapport
+- **Rapport de soumission** — titre, sévérité, CVE/CWE, reproduction `curl`, remediation, références
+- **Sortie JSON + exit codes** — `0` = rien d'actionnable, `2` = findings actionnables (pilotage de loop)
+- **Serveur MCP** — branché directement dans Hermes
 
 ## Installation
 
-Local editable install:
+Aucune dépendance lourde. Il faut `nuclei` sur le PATH et [`uv`](https://github.com/astral-sh/uv) :
 
 ```bash
-python3 -m pip install -e .
+brew install nuclei      # ou : go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest
+nuclei -update-templates
 ```
 
-Classic dependency install:
+## Usage — CLI
 
 ```bash
-python3 -m pip install -r requirements.txt
+# Scanner une cible et produire un rapport
+python3 excalibur.py -u https://target.com --scope scope.yaml \
+    --program "Acme YWH" --platform ywh --json -o out/
+
+# Rapporter depuis un scan nuclei existant
+python3 excalibur.py --jsonl scan.jsonl -u target.com --scope scope.yaml
 ```
 
-Version check:
+Fichier de scope (`scope.yaml`) :
+
+```yaml
+include:
+  - "*.target.com"
+  - "target.com"
+exclude:
+  - "admin.target.com"
+```
+
+## Usage — MCP (dans Hermes)
+
+`~/.hermes/config.yaml` :
+
+```yaml
+mcp_servers:
+  - name: excalibur
+    transport: stdio
+    command: uv
+    args: ["run", "/Users/you/projects/excalibur/excalibur_mcp.py"]
+    enabled: true
+```
+
+Outils exposés :
+
+| Outil | Rôle |
+|-------|------|
+| `excalibur_scan` | Lance nuclei sur une cible, renvoie un handle |
+| `excalibur_report` | Parse un run en rapport scope-enforced |
+| `excalibur_scope_check` | Vérifie qu'un host est dans le scope (avant d'agir) |
+
+## Tests
 
 ```bash
-excalibur --version
+uv run --with pytest python3 -m pytest test_excalibur.py -v
 ```
 
-## Outputs
+Couvre : déduplication, robustesse (JSON invalide/lignes vides), tri par
+sévérité, extraction CVE/CWE/curl, scope include/exclude, anti-spoof, rendu du rapport.
 
-Generated artifacts are written to `artifacts/`:
+## Licence
 
-- `nmap_playbook.yml`
-- `nmap_report.xml`
-- `nmap_report.json`
-- `scan_metadata.json`
-- `vulnerabilities_report.json`
-
-## Local Development
-
-Run tests:
-
-```bash
-PYTHONPYCACHEPREFIX=/tmp/pycache python3 -m unittest discover -s tests
-```
-
-Run syntax checks:
-
-```bash
-PYTHONPYCACHEPREFIX=/tmp/pycache python3 -m py_compile \
-  Excalibur.py \
-  ExegolSpector.py \
-  excalibur/*.py \
-  exegol_spector/*.py \
-  Modules/attack_orchestrator.py \
-  Modules/cve_search.py
-```
-
-## Current Limits
-
-- the current Nmap cheatsheet does not yet cover every advertised profile
-- several historical scripts under [Modules/](/Users/billard/Documents/ExegolSpector/Modules) remain outside the maintained core
-- Ansible is still the execution backbone; a future step could be richer profile schemas and more structured execution backends
+Apache 2.0.
